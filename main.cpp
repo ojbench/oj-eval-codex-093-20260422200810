@@ -33,48 +33,28 @@ int main() {
         return order;
     };
 
-    // State for loop detection: position + direction + remaining beans pattern matters for scoring repeat?
-    // But requirement: if Pacman would enter a dead loop (movement repeats), output "Silly Pacman".
-    // Beans are consumed; however loop definition likely means movement cycles without hitting ghost,
-    // regardless of beans state. To be robust, track (r,c,dir) visited count after beans stop changing.
-    // Simpler: track full state (r,c,dir) and the set of eaten beans could be large. Instead,
-    // as beans are finite, once a state repeats (r,c,dir) with the same grid beans configuration, it's a cycle.
-    // Encoding full grid is heavy; but 10x10 small -> we can hash the grid's bean positions (value 2 means uneaten).
-
-    auto hash_grid = [&](const vector<vector<int>>& grid)->uint64_t{
-        uint64_t h = 1469598103934665603ull;
-        const uint64_t FNV_PRIME = 1099511628211ull;
-        for (int i = 0; i < 10; ++i) {
-            for (int j = 0; j < 10; ++j) {
-                // Only bean presence affects future scoring; walls/empty/ghosts/static don't change
-                unsigned char v = (grid[i][j] == 2);
-                h ^= v;
-                h *= FNV_PRIME;
-            }
-        }
-        return h;
-    };
-
-    unordered_set<uint64_t> seen;
+    // Loop detection: movement depends only on walls and current direction (beans don't affect passability).
+    // If a (r,c,dir) state repeats, Pacman will loop forever without hitting a ghost.
+    struct State { int r,c,d; };
+    struct StateHash { size_t operator()(const State& s) const noexcept {
+        return (s.r*10 + s.c) * 131u + s.d;
+    }};
+    struct StateEq { bool operator()(const State& a, const State& b) const noexcept {
+        return a.r==b.r && a.c==b.c && a.d==b.d;
+    }};
+    unordered_set<State, StateHash, StateEq> seen;
     seen.reserve(1<<12);
-
-    auto state_key = [&](int rr,int cc,int d)->uint64_t{
-        uint64_t h = hash_grid(g);
-        h ^= (uint64_t)(rr*10+cc) + 0x9e3779b97f4a7c15ull + (h<<6) + (h>>2);
-        h ^= (uint64_t)d * 0xbf58476d1ce4e5b9ull;
-        return h;
-    };
 
     // If starting on a bean (value 2)? Problem states 4 is start, so no bean.
 
     // Simulation loop with safety cap
     for (int steps = 0; steps < 1000000; ++steps) {
-        uint64_t key = state_key(r,c,dir);
-        if (seen.find(key) != seen.end()) {
+        State st{r,c,dir};
+        if (seen.find(st) != seen.end()) {
             cout << "Silly Pacman";
             return 0;
         }
-        seen.insert(key);
+        seen.insert(st);
 
         // Choose next move following right-hand rule
         array<int,4> pr = next_dir_priority(dir);
@@ -109,4 +89,3 @@ int main() {
     cout << "Silly Pacman";
     return 0;
 }
-
